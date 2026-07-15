@@ -51,3 +51,10 @@ test("表示整形 ・－", () => {
 test("未知の符号は � になる", () => {
   assert.equal(decode("........", "international").includes("�"), true);
 });
+
+test("先頭・末尾・連続の語区切りは無視される", () => {
+  // マイク受信のライブ表示は「次の語待ち」の印として末尾に "/" を付けてくる
+  assert.equal(decode("... --- ... /", "international"), "SOS");
+  assert.equal(decode("/ ... --- ...", "international"), "SOS");
+  assert.equal(decode(".... .. / / --- -.-", "international"), "HI OK");
+});

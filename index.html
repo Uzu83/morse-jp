@@ -42,6 +42,11 @@
           <button id="stop-listen">■ 停止</button>
           <span class="hint" id="listen-hint"></span>
         </div>
+        <!-- 受信状態メーター。装飾（数値は listen-hint がテキストで持つ）なので aria-hidden -->
+        <div class="meter" id="meter" hidden aria-hidden="true">
+          <div class="meter-bar" id="meter-bar"></div>
+          <div class="meter-mark" id="meter-mark"></div>
+        </div>
       </section>
 
       <footer class="ftr">

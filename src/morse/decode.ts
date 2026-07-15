@@ -24,7 +24,14 @@ export function decode(morse: string, mode: Mode): string {
   const normalized = normalize(morse);
   if (!normalized) return "";
 
-  const words = normalized.split(" / ");
+  // "/" は語区切りとしてだけ扱い、空の語（先頭・末尾・連続スラッシュ）は捨てる。
+  // 末尾の "/" はマイク受信のライブ表示が「次の語を待っている」印として常に
+  // 付けてくるので（classify.ts の仮想末尾 OFF）、ここで寛容に受けないと
+  // 受信中の画面に不明トークン "�" が出る。人力入力の書きかけにも同じ効果。
+  const words = normalized
+    .split("/")
+    .map((w) => w.trim())
+    .filter((w) => w.length > 0);
   const decodedWords = words.map((word) => {
     const tokens = word.split(" ").filter(Boolean);
     return mode === "wabun"
