@@ -1,16 +1,45 @@
-// マイク入力からモールス符号を復号する。
+// マイク入力からモールス符号を復号する — ブラウザ結合層。
 //
-// 流れ: マイク → AnalyserNode で対象周波数帯のエネルギーを監視 →
-// ヒステリシス付きしきい値で ON/OFF 判定 → ON/OFF の継続時間から
-// 短点/長点・符号内間/文字間/語間を分類 → モールス文字列を組み立てる。
+// 流れ: マイク → AnalyserNode → 毎フレーム getFloatFrequencyData →
+//       ToneDetector（ON/OFF 判定・純粋） → PulseClassifier（符号組み立て・純粋）
 //
-// dit 長は観測した最短 ON パルスから適応推定するので、送信速度が未知でも追従する。
+// 本ファイルは意図的に「薄い」。判定・分類のロジックをここに書き足さないこと。
+// 2026-07-15 の改修で、旧実装（固定しきい値 0.35/0.20 + 逐次確定）が持っていた
+// ロジックはすべて detect.ts / classify.ts へ移した。理由と設計判断の履歴は
+// 両ファイルの冒頭コメントにある（固定しきい値・byte スペクトラム・逐次確定へ
+// 戻さないこと — codex レビューで欠陥として確定済み）。
+//
+// 既知の制約（仕様）:
+// - rAF 駆動なのでタブが非表示になると受信が止まる。バックグラウンド受信が
+//   必要になったら AudioWorklet 化する（ロードマップ記載の将来課題）。
+// - サポート範囲は 5〜40 WPM の一定速度送信。詳細は classify.ts 冒頭。
+
+import { PulseClassifier } from "./classify";
+import { ToneDetector } from "./detect";
+
+/** 受信状態（UI メーター用）。dB はすべてノイズ床からの相対値。 */
+export interface ListenStatus {
+  /** 現フレームの信号レベル（ノイズ床比 dB）。 */
+  snrDb: number;
+  /** トーン ON 判定中か。 */
+  on: boolean;
+  /** 検出可能な状態か（信号とノイズの分離が確保できているか）。 */
+  ready: boolean;
+  /** 推定送信速度（WPM）。短点・長点の両クラスタ確定まで null（UI は「測定中」）。 */
+  wpm: number | null;
+  /** ON 判定しきい値（ノイズ床比 dB）。メーターのマーカー位置。 */
+  onThreshDb: number;
+  /** OFF 判定しきい値（ノイズ床比 dB）。 */
+  offThreshDb: number;
+}
 
 export interface ListenOptions {
   /** 対象トーン周波数の中心（Hz）。既定 600。 */
   freq?: number;
-  /** 部分的なモールス文字列が更新されるたびに呼ばれる。 */
+  /** モールス文字列が変化するたびに呼ばれる（毎回全文を渡す — 遡及訂正があるため）。 */
   onMorse?: (morse: string) => void;
+  /** 毎フレームの受信状態。UI メーター用。 */
+  onStatus?: (status: ListenStatus) => void;
 }
 
 export class MorseListener {
@@ -18,112 +47,82 @@ export class MorseListener {
   private stream?: MediaStream;
   private raf = 0;
   private analyser?: AnalyserNode;
-
-  private on = false;
-  private lastChange = 0;
-  private unit = 0.08; // dit 長の推定（秒）。観測で更新。
-  private morse = "";
-  private pendingLetterGap = false;
+  private detector?: ToneDetector;
+  private classifier = new PulseClassifier();
+  // TS 5.7+ の DOM 型は getFloatFrequencyData に ArrayBuffer 背景の配列を要求する
+  private spectrum?: Float32Array<ArrayBuffer>;
+  private lastMorse = "";
 
   constructor(private opts: ListenOptions = {}) {}
 
   async start(): Promise<void> {
-    this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    // echoCancellation 等の音声通話向け処理はトーンを「エコー」として抑圧しうるので
+    // 明示的に切る（ブラウザ既定は on のことが多い）。
+    this.stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
+      },
+    });
     this.ctx = new (window.AudioContext ||
       (window as any).webkitAudioContext)();
     const src = this.ctx.createMediaStreamSource(this.stream);
     const analyser = this.ctx.createAnalyser();
     analyser.fftSize = 2048;
-    analyser.smoothingTimeConstant = 0.1;
+    // 時間方向の平滑化はパルスのエッジを鈍らせる（短点の立ち上がり検出が遅れる）ので
+    // 0 にする。平滑化の役割は ToneDetector のトラッカーが担う。
+    analyser.smoothingTimeConstant = 0;
     src.connect(analyser);
     this.analyser = analyser;
-    this.lastChange = this.ctx.currentTime;
+    this.detector = new ToneDetector({
+      sampleRate: this.ctx.sampleRate,
+      fftSize: analyser.fftSize,
+      freq: this.opts.freq ?? 600,
+    });
+    this.spectrum = new Float32Array(analyser.frequencyBinCount);
     this.loop();
   }
 
+  /** 受信を停止し、進行中の符号を確定した最終モールス文字列を返す。 */
   stop(): string {
     cancelAnimationFrame(this.raf);
+    // 進行中の ON・末尾の区切りを flush で確定してから通知する
+    // （旧実装は停止時に進行中の符号を捨てていた）。
+    const now = this.ctx?.currentTime ?? 0;
+    const { morse } = this.classifier.flush(now);
+    if (morse !== this.lastMorse) this.opts.onMorse?.(morse);
     this.stream?.getTracks().forEach((t) => t.stop());
     this.ctx?.close();
-    return this.morse;
+    return morse;
   }
 
-  /** 対象周波数帯のエネルギーを取り、しきい値で ON/OFF を判定する。 */
   private loop = () => {
     const analyser = this.analyser!;
     const ctx = this.ctx!;
-    const bins = new Uint8Array(analyser.frequencyBinCount);
-    analyser.getByteFrequencyData(bins);
+    const spectrum = this.spectrum!;
+    analyser.getFloatFrequencyData(spectrum);
 
-    const freq = this.opts.freq ?? 600;
-    const nyquist = ctx.sampleRate / 2;
-    const binHz = nyquist / bins.length;
-    const center = Math.round(freq / binHz);
-    const half = Math.max(1, Math.round(80 / binHz)); // ±80Hz 帯
-
-    let energy = 0;
-    let count = 0;
-    for (let i = center - half; i <= center + half; i++) {
-      if (i >= 0 && i < bins.length) {
-        energy += bins[i];
-        count++;
-      }
-    }
-    const level = count ? energy / count / 255 : 0;
-
-    // ヒステリシス: 立ち上がり 0.35、立ち下がり 0.20。
+    // 時刻は rAF の値ではなく音声クロック（AudioContext.currentTime）を使う。
+    // rAF のタイムスタンプは描画クロックで、スロットリング時に音声とずれる。
     const now = ctx.currentTime;
-    if (!this.on && level > 0.35) this.transition(true, now);
-    else if (this.on && level < 0.2) this.transition(false, now);
-    else this.checkGap(now);
+    const frame = this.detector!.update(spectrum, now);
+    this.classifier.push(frame.on, now);
+
+    const { morse, unit } = this.classifier.read(now);
+    if (morse !== this.lastMorse) {
+      this.lastMorse = morse;
+      this.opts.onMorse?.(morse);
+    }
+    this.opts.onStatus?.({
+      snrDb: frame.snrDb,
+      on: frame.on,
+      ready: frame.ready,
+      wpm: unit === null ? null : Math.round(1.2 / unit),
+      onThreshDb: frame.onThreshDb,
+      offThreshDb: frame.offThreshDb,
+    });
 
     this.raf = requestAnimationFrame(this.loop);
   };
-
-  /** ON↔OFF が切り替わった瞬間に、直前区間の長さを分類する。 */
-  private transition(toOn: boolean, now: number) {
-    const dur = now - this.lastChange;
-    this.lastChange = now;
-
-    if (toOn) {
-      // 直前は OFF（無音）区間 → 間の種類を判定。
-      if (dur > this.unit * 5) {
-        this.morse += " / "; // 語間
-        this.pendingLetterGap = false;
-      } else if (dur > this.unit * 2) {
-        this.morse += " "; // 文字間
-        this.pendingLetterGap = false;
-      }
-      this.on = true;
-    } else {
-      // 直前は ON（トーン）区間 → 短点/長点を判定。
-      const isDash = dur > this.unit * 2;
-      if (!isDash) {
-        // 短点で dit 推定を更新（移動平均）。
-        this.unit = this.unit * 0.7 + dur * 0.3;
-      }
-      this.morse += isDash ? "-" : ".";
-      this.on = false;
-      this.pendingLetterGap = true;
-      this.emit();
-    }
-  }
-
-  /** 送信が途切れたまま十分な無音が続いたら、文字/語の区切りを補う。 */
-  private checkGap(now: number) {
-    if (this.on || !this.pendingLetterGap) return;
-    const gap = now - this.lastChange;
-    if (gap > this.unit * 5) {
-      this.morse += " / ";
-      this.pendingLetterGap = false;
-      this.emit();
-    } else if (gap > this.unit * 2 && !this.morse.endsWith(" ")) {
-      this.morse += " ";
-      this.emit();
-    }
-  }
-
-  private emit() {
-    this.opts.onMorse?.(this.morse.trim());
-  }
 }

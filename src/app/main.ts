@@ -72,6 +72,30 @@ morseIn.addEventListener("input", refreshDecode);
 
 // マイク受信
 const listenHint = $("listen-hint");
+const meter = $("meter");
+const meterBar = $("meter-bar");
+const meterMark = $("meter-mark");
+
+// メーターの表示レンジ（dB）。SNR 0〜30dB を幅 0〜100% にマップする。
+// 30dB = 静かな室内でスピーカー音を拾ったときの典型的な上限。これ以上は飽和表示でよい。
+const METER_RANGE_DB = 30;
+
+function renderStatus(s: import("../audio/decoder").ListenStatus) {
+  const pct = (db: number) =>
+    `${Math.max(0, Math.min(100, (db / METER_RANGE_DB) * 100))}%`;
+  meterBar.style.width = pct(s.snrDb);
+  meterBar.classList.toggle("on", s.on);
+  // マーカーは ON しきい値（「ここを超えれば発火する」が受信者の知りたい情報。
+  // OFF しきい値でないのは codex レビューで固定した仕様）。
+  meterMark.style.left = pct(s.onThreshDb);
+  meterMark.style.display = s.ready ? "" : "none";
+  listenHint.textContent = !s.ready
+    ? "受信中… 信号を探しています"
+    : s.wpm === null
+      ? "受信中… 速度を測定中"
+      : `受信中 · 約 ${s.wpm} WPM`;
+}
+
 $("listen").addEventListener("click", async () => {
   if (listener) return;
   listenHint.textContent = "受信中…";
@@ -81,9 +105,11 @@ $("listen").addEventListener("click", async () => {
       morseIn.value = toDisplay(m);
       refreshDecode();
     },
+    onStatus: renderStatus,
   });
   try {
     await listener.start();
+    meter.hidden = false;
   } catch (e) {
     listenHint.textContent = "マイクを開始できませんでした";
     listener = null;
@@ -95,6 +121,7 @@ $("stop-listen").addEventListener("click", () => {
   listener.stop();
   listener = null;
   listenHint.textContent = "";
+  meter.hidden = true;
 });
 
 // 初期表示

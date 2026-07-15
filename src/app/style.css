@@ -143,6 +143,33 @@ button:hover {
   color: var(--sub);
 }
 
+/* 受信状態メーター: SNR バー + ON しきい値マーカー */
+.meter {
+  position: relative;
+  height: 8px;
+  margin-top: 10px;
+  border-radius: 4px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+.meter-bar {
+  height: 100%;
+  width: 0;
+  background: var(--sub);
+  transition: width 60ms linear; /* rAF 更新を軽く均す。長いと立ち上がりが見えない */
+}
+.meter-bar.on {
+  background: var(--accent);
+}
+.meter-mark {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #e0a33e;
+}
+
 .ftr {
   text-align: center;
   color: var(--sub);
