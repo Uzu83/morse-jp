@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>morse-jp — 和文・欧文モールス双方向変換</title>
+    <meta
+      name="description"
+      content="テキスト↔モールス符号を双方向変換。和文（カナ）と欧文に対応。音声再生とマイク復号も。"
+    />
+  </head>
+  <body>
+    <main id="app">
+      <header class="hdr">
+        <h1>morse-jp</h1>
+        <p class="tagline">和文・欧文モールス、双方向。</p>
+        <div class="mode" id="mode">
+          <button data-mode="wabun" class="active">和文（カナ）</button>
+          <button data-mode="international">欧文（A–Z）</button>
+        </div>
+      </header>
+
+      <section class="panel">
+        <h2>テキスト → モールス</h2>
+        <textarea id="text-in" rows="3" placeholder="例: こんにちは / SOS"></textarea>
+        <div class="morse-out" id="morse-out" aria-live="polite"></div>
+        <div class="controls">
+          <button id="play" class="primary">▶ 再生</button>
+          <button id="stop-play">■ 停止</button>
+          <label>速度 <input id="wpm" type="range" min="8" max="30" value="18" /><span id="wpm-val">18</span> WPM</label>
+          <label>音程 <input id="freq" type="range" min="400" max="900" step="20" value="600" /><span id="freq-val">600</span> Hz</label>
+        </div>
+        <p class="skipped" id="skipped"></p>
+      </section>
+
+      <section class="panel">
+        <h2>モールス → テキスト</h2>
+        <textarea id="morse-in" rows="3" placeholder="・－ を入力、または下のマイクで受信"></textarea>
+        <div class="text-out" id="text-out" aria-live="polite"></div>
+        <div class="controls">
+          <button id="listen" class="primary">🎙 マイクで受信</button>
+          <button id="stop-listen">■ 停止</button>
+          <span class="hint" id="listen-hint"></span>
+        </div>
+      </section>
+
+      <footer class="ftr">
+        <a href="https://github.com/Uzu83/morse-jp">GitHub</a>
+        ・ MIT License ・ 和文モールス対応
+      </footer>
+    </main>
+    <script type="module" src="/src/app/main.ts"></script>
+  </body>
+</html>
