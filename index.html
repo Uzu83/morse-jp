@@ -27,8 +27,14 @@
         <div class="controls">
           <button id="play" class="primary">▶ 再生</button>
           <button id="stop-play">■ 停止</button>
+          <!-- 光インジケータ。装飾的な補助出力なので aria-hidden。
+               全画面フラッシュにしない（光過敏対策）— 根拠は style.css の .light 参照 -->
+          <span class="light" id="light" aria-hidden="true"></span>
           <label>速度 <input id="wpm" type="range" min="8" max="30" value="18" /><span id="wpm-val">18</span> WPM</label>
           <label>音程 <input id="freq" type="range" min="400" max="900" step="20" value="600" /><span id="freq-val">600</span> Hz</label>
+          <!-- 光・バイブは明示的オプトイン（既定 OFF）。点滅を勝手に始めない -->
+          <label><input type="checkbox" id="flash-opt" /> 💡 光</label>
+          <label id="vibe-label"><input type="checkbox" id="vibe-opt" /> 📳 バイブ</label>
         </div>
         <p class="skipped" id="skipped"></p>
       </section>

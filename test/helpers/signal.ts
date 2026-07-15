@@ -5,6 +5,8 @@
 // 「合成 dB 配列だけでは bin ずれ・窓漏れを拘束できない」への対応）。
 // 乱数はすべてシード付き PRNG — テストは常に再現可能でなければならない。
 
+import { buildTimeline } from "../../src/morse/timeline";
+
 /** mulberry32: シード付き 32bit PRNG。テストの決定論性のため Math.random は使わない。 */
 export function mulberry32(seed: number): () => number {
   let a = seed >>> 0;
@@ -18,7 +20,8 @@ export function mulberry32(seed: number): () => number {
 
 /**
  * モールス文字列（"." "-" " " "/"）をキーイングした PCM を合成する。
- * タイミングは player.ts と同じ規則（短点1u+間1u、長点3u+間1u、' '=+2u、'/'=+4u）。
+ * タイミングは送出側の唯一の定義である src/morse/timeline.ts を消費する
+ * （規則をここに複製しない — 過去に player とヘルパーで解釈が割れた）。
  */
 export function synthesizeMorseAudio(
   morse: string,
@@ -41,15 +44,11 @@ export function synthesizeMorseAudio(
   const tail = opts.tailSec ?? 0.25;
 
   // (on, 継続時間) のスケジュールを組み立ててから一括でサンプル化する。
-  const sched: Array<{ on: boolean; dur: number }> = [{ on: false, dur: lead }];
-  for (const c of morse) {
-    if (c === ".") sched.push({ on: true, dur: unit }, { on: false, dur: unit });
-    else if (c === "-")
-      sched.push({ on: true, dur: 3 * unit }, { on: false, dur: unit });
-    else if (c === " ") sched.push({ on: false, dur: 2 * unit });
-    else if (c === "/") sched.push({ on: false, dur: 4 * unit });
-  }
-  sched.push({ on: false, dur: tail });
+  const sched: Array<{ on: boolean; dur: number }> = [
+    { on: false, dur: lead },
+    ...buildTimeline(morse).map((s) => ({ on: s.on, dur: s.units * unit })),
+    { on: false, dur: tail },
+  ];
 
   const total = Math.ceil(sched.reduce((a, s) => a + s.dur, 0) * sr);
   const out = new Float32Array(total);

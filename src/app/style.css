@@ -143,6 +143,33 @@ button:hover {
   color: var(--sub);
 }
 
+/* 光インジケータ（再生に同期して点灯）。
+   意図的に小さな円に留めている: 20WPM の短点連打は約 8Hz の点滅で、全画面で
+   やると光過敏性発作リスク帯（3〜30Hz）に入る。WCAG 2.3.1 の「小さな安全領域」に
+   収める設計なので、安易に面積を広げないこと。 */
+.light {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  flex-shrink: 0;
+}
+.light.lit {
+  background: var(--accent);
+  box-shadow: 0 0 12px var(--accent);
+}
+@media (prefers-reduced-motion: reduce) {
+  /* 動きを減らす設定では発光の余韻（グロー）を出さない。点灯自体は
+     ユーザーが「💡 光」を明示的に有効化した場合しか起きない */
+  .light.lit {
+    box-shadow: none;
+  }
+}
+#vibe-label.unsupported {
+  opacity: 0.45;
+}
+
 /* 受信状態メーター: SNR バー + ON しきい値マーカー */
 .meter {
   position: relative;
