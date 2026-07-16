@@ -11,6 +11,13 @@
   box-sizing: border-box;
 }
 
+/* hidden 属性を常に効かせる。UA 既定の [hidden]{display:none} は、こちらが
+   .controls 等に書く display:flex/grid に詳細度で負ける（作者スタイルが勝つ）。
+   表示切替を hidden 一本で扱うための保険。 */
+[hidden] {
+  display: none !important;
+}
+
 body {
   margin: 0;
   font-family: system-ui, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif;
@@ -195,6 +202,146 @@ button:hover {
   bottom: 0;
   width: 2px;
   background: #e0a33e;
+}
+
+/* ── 学習モード（フラッシュカード）───────── */
+
+/* アクティビティ切替と和文/欧文切替が 2 段重なるので、上段の間隔だけ詰めて
+   「2 つで 1 組の切替」に見せる（.mode の 24px はヘッダ末尾用の値） */
+#activity {
+  margin-bottom: 10px;
+}
+
+/* 出題方向のセグメント。.mode より一回り小さくし、パネル内の従属的な切替に見せる */
+.seg {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.seg button {
+  flex: 1;
+  padding: 8px;
+  background: var(--bg);
+  color: var(--sub);
+  font-size: 13px;
+}
+.seg button.active {
+  color: var(--bg);
+  background: var(--accent);
+  border-color: var(--accent);
+  font-weight: 700;
+}
+
+/* 出題ステージ。min-height は「答えを出した状態」の高さ（問題文 + 文字 + 符号の
+   3 行 + padding ≒ 168px）に合わせてある。出題中は要素が伏せてあるぶん背が低く、
+   これが無いと回答した瞬間にステージが伸びて下のボタン列が飛ぶ（読みたいものが動く）。
+   数字は下の font-size / line-height / gap を変えたら取り直すこと。 */
+.learn-stage {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+  min-height: 168px;
+  padding: 16px;
+  border-radius: 10px;
+  background: var(--bg);
+  text-align: center;
+}
+.learn-q {
+  margin: 0;
+  color: var(--sub);
+  font-size: 13px;
+}
+.learn-char {
+  margin: 0;
+  font-size: 52px;
+  line-height: 1.15;
+  font-weight: 700;
+}
+.learn-code {
+  margin: 0;
+  color: var(--accent);
+  font-size: 24px;
+  letter-spacing: 4px;
+  word-break: break-word;
+}
+
+/* 選択肢は 2 列固定。4 つがモバイルの 1 画面に収まり、タップ標的も十分大きい */
+.choices {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  margin-top: 12px;
+}
+.choice {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 56px;
+  padding: 14px 10px;
+  background: var(--bg);
+  font-size: 22px;
+}
+/* 数字キーの割当バッジ */
+.choice .key {
+  padding: 0 5px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--sub);
+  font-size: 11px;
+}
+.choice .mark {
+  font-size: 16px;
+}
+.choice:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+/* 正誤は色 + 記号（○/×）で示す。色覚に依存させない（a11y 要件）ので、
+   この 2 つのクラスから色を外しても意味は失われない */
+.choice.correct,
+.choice.wrong {
+  opacity: 1;
+}
+.choice.correct {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.choice.wrong {
+  border-color: #e0663e;
+  color: #e0663e;
+}
+
+#learn-self {
+  margin-top: 12px;
+}
+
+.learn-feedback {
+  margin: 12px 0 0;
+  min-height: 22px;
+  font-size: 15px;
+}
+.learn-feedback.ok {
+  color: var(--accent);
+}
+.learn-feedback.ng {
+  color: #e0663e;
+}
+
+.learn-unlock {
+  margin: 6px 0 12px;
+  min-height: 18px;
+  color: #e0a33e;
+  font-size: 13px;
+}
+
+.learn-progress {
+  margin: 16px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  color: var(--sub);
+  font-size: 13px;
 }
 
 .ftr {

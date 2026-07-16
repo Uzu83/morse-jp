@@ -14,13 +14,21 @@
       <header class="hdr">
         <h1>morse-jp</h1>
         <p class="tagline">和文・欧文モールス、双方向。</p>
-        <div class="mode" id="mode">
-          <button data-mode="wabun" class="active">和文（カナ）</button>
-          <button data-mode="international">欧文（A–Z）</button>
+        <!-- アクティビティ切替。既定は「変換」＝ 初期表示・初期挙動を従来と完全に同一に保つ。
+             学習を後から足しても、既存の導線に一切割り込まないための既定値。 -->
+        <div class="mode" id="activity" role="group" aria-label="アクティビティ">
+          <button data-activity="convert" class="active" aria-pressed="true">変換</button>
+          <button data-activity="learn" aria-pressed="false">学習</button>
+        </div>
+        <!-- 和文/欧文は両アクティビティ共有。学習ではそのままデッキ切替を兼ねる
+             （「いま何文字のモールスを扱っているか」の概念が 2 箇所に分裂しないように） -->
+        <div class="mode" id="mode" role="group" aria-label="モールスの種別">
+          <button data-mode="wabun" class="active" aria-pressed="true">和文（カナ）</button>
+          <button data-mode="international" aria-pressed="false">欧文（A–Z）</button>
         </div>
       </header>
 
-      <section class="panel">
+      <section class="panel" data-panel="convert">
         <h2>テキスト → モールス</h2>
         <textarea id="text-in" rows="3" placeholder="例: こんにちは / SOS"></textarea>
         <div class="morse-out" id="morse-out" aria-live="polite"></div>
@@ -39,7 +47,7 @@
         <p class="skipped" id="skipped"></p>
       </section>
 
-      <section class="panel">
+      <section class="panel" data-panel="convert">
         <h2>モールス → テキスト</h2>
         <textarea id="morse-in" rows="3" placeholder="・－ を入力、または下のマイクで受信"></textarea>
         <div class="text-out" id="text-out" aria-live="polite"></div>
@@ -53,6 +61,53 @@
           <div class="meter-bar" id="meter-bar"></div>
           <div class="meter-mark" id="meter-mark"></div>
         </div>
+      </section>
+
+      <!-- 学習アクティビティ。既存パネルとは表示/非表示だけで入れ替える（DOM は破壊しない）。
+           進捗・セッション状態は main.ts のメモリと localStorage が持つので、
+           パネルを作り直す理由が無い＝入力中の値や購読も壊さない。 -->
+      <section class="panel" id="learn" hidden>
+        <h2>学習（フラッシュカード）</h2>
+
+        <div class="seg" id="learn-dir" role="group" aria-label="出題方向">
+          <button data-dir="listen" class="active" aria-pressed="true">🎧 聞き取り（音→文字）</button>
+          <button data-dir="recall" aria-pressed="false">💭 想起（文字→符号）</button>
+        </div>
+
+        <!-- 出題の提示面。ここ全体を aria-live にして「問題・答え」の変化を読み上げさせる
+             （個別要素に散らすと、出題→解答の 1 まとまりが分割して読まれる） -->
+        <div class="learn-stage" id="learn-stage" aria-live="polite">
+          <p class="learn-q" id="learn-q"></p>
+          <p class="learn-char" id="learn-char" hidden></p>
+          <p class="learn-code" id="learn-code" hidden></p>
+        </div>
+
+        <div class="controls">
+          <button id="learn-reveal" class="primary" hidden>答えを見る</button>
+          <button id="learn-play" class="primary">▶ 聞く</button>
+          <!-- 学習専用の停止ボタン。変換パネルの #stop-play は学習中に非表示になるため、
+               ここに無いと音・光・バイブを止める手段が画面から消える -->
+          <button id="learn-stop">■ 停止</button>
+          <!-- 学習用の光インジケータ。#light は非表示パネルの中なので学習中は見えない。
+               所有権パターン（最新セッションだけが操作）は #light と同じ -->
+          <span class="light" id="learn-light" aria-hidden="true"></span>
+        </div>
+
+        <!-- 選択肢は JS が実 button で描画する（数字キー 1-4 でも回答できる）。
+             かなの自由入力は IME・モバイルで破綻するので多肢選択にしている -->
+        <div class="choices" id="learn-choices" role="group" aria-label="選択肢"></div>
+
+        <div class="controls" id="learn-self" hidden>
+          <button data-self="1">○ できた</button>
+          <button data-self="0">× できなかった</button>
+        </div>
+
+        <p class="learn-feedback" id="learn-feedback" aria-live="polite"></p>
+        <p class="learn-unlock" id="learn-unlock" aria-live="polite"></p>
+        <div class="controls">
+          <button id="learn-next" hidden>次の問題 →</button>
+        </div>
+        <p class="learn-progress" id="learn-progress"></p>
       </section>
 
       <footer class="ftr">
