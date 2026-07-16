@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "vitest";
 
 import { PulseClassifier } from "../src/audio/classify";
+import { buildTimeline } from "../src/morse/timeline";
 import { mulberry32 } from "./helpers/signal";
 
 // 60fps の rAF でサンプリングした現実的なタイムスタンプを模す:
@@ -21,7 +22,8 @@ interface TimelineOpts {
 
 /**
  * モールス文字列から ON/OFF 遷移列を作って classifier へ流す。
- * タイミング規則は送信側（player.ts / signal.ts）と同じ。終了時刻を返す。
+ * タイミング規則は送出側の唯一の定義 src/morse/timeline.ts を消費する。
+ * 最後のトーンの終了時刻を返す（末尾に無音は付かない — timeline の仕様）。
  */
 function pushMorse(
   cls: PulseClassifier,
@@ -35,16 +37,11 @@ function pushMorse(
     return Math.round(t / FRAME) * FRAME + j;
   };
   let t = opts.start ?? 0;
-  const u = opts.unit;
-  for (const c of morse) {
-    if (c === "." || c === "-") {
-      cls.push(true, q(t));
-      t += c === "." ? u : 3 * u;
-      cls.push(false, q(t));
-      t += u; // 符号内の間
-    } else if (c === " ") t += 2 * u;
-    else if (c === "/") t += 4 * u;
+  for (const seg of buildTimeline(morse)) {
+    cls.push(seg.on, q(t));
+    t += seg.units * opts.unit;
   }
+  cls.push(false, q(t)); // 最後のトーンを閉じる
   return t;
 }
 
@@ -126,7 +123,7 @@ test("分類: 長点しか無い間は暫定分類し、短点の出現で遡及
   // 文字間を空けて "..." が続くと両クラスタが確定し、全履歴が正しく再分類される
   const end2 = pushMorse(cls, "...", {
     unit: UNIT_20WPM,
-    start: end1 + 2 * UNIT_20WPM, // 直前の符号内間 1u と合わせて文字間 3u
+    start: end1 + 3 * UNIT_20WPM, // 文字間 3u（end1 は最後のトーン終了時刻）
   });
   const r2 = cls.read(end2);
   assert.equal(r2.morse, "--- ...");
@@ -166,26 +163,28 @@ test("分類: 1 フレーム相当のスパイク・瞬断は併合される", (
 });
 
 test("分類: flush は進行中の長点を確定する", () => {
+  const u = UNIT_20WPM;
   const cls = new PulseClassifier();
-  const end = pushMorse(cls, "..", { unit: UNIT_20WPM });
-  cls.push(true, end); // 3 つ目の符号（長点）を送信中のまま停止
-  const r = cls.flush(end + 3 * UNIT_20WPM);
+  const end = pushMorse(cls, "..", { unit: u });
+  cls.push(true, end + u); // 符号内間 1u ののち、3 つ目の符号（長点）を送信中のまま停止
+  const r = cls.flush(end + 4 * u);
   assert.equal(r.morse, "..-");
 });
 
 test("分類: read は進行中の ON を含めない（送信中に符号が揺れない）", () => {
+  const u = UNIT_20WPM;
   const cls = new PulseClassifier();
-  const end = pushMorse(cls, "..", { unit: UNIT_20WPM });
-  cls.push(true, end);
+  const end = pushMorse(cls, "..", { unit: u });
+  cls.push(true, end + u);
   // 長点送信中（1.5u 経過時点）に read しても、進行中の符号は現れない
-  assert.equal(cls.read(end + 1.5 * UNIT_20WPM).morse, "..");
+  assert.equal(cls.read(end + 2.5 * u).morse, "..");
 });
 
 test("分類: 無音の継続で文字間 → 語間へ遡及更新される（仮想末尾 OFF）", () => {
   const u = UNIT_20WPM;
   const cls = new PulseClassifier();
   const end = pushMorse(cls, "... ---", { unit: u });
-  // 最後の OFF 遷移は end - u 時点。文字間相当の無音 → まだ語区切りは出ない
+  // 最後の OFF 遷移は end 時点（最後のトーン終了）。文字間相当の無音 → まだ語区切りは出ない
   assert.equal(cls.read(end + 2 * u).morse.endsWith("/"), false);
   // 語間相当まで無音が伸びると " / " が現れる（次の語を待っている表示）
   assert.equal(cls.read(end + 6 * u).morse.endsWith("/"), true);

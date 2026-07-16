@@ -40,16 +40,44 @@ function refreshEncode() {
 textIn.addEventListener("input", refreshEncode);
 
 // 再生
+const light = $("light");
+const flashOpt = $<HTMLInputElement>("flash-opt");
+const vibeOpt = $<HTMLInputElement>("vibe-opt");
+// Vibration API 非対応（iOS Safari 等）はチェックボックスごと無効化して理由を示す
+if (!("vibrate" in navigator)) {
+  vibeOpt.disabled = true;
+  $("vibe-label").classList.add("unsupported");
+  $("vibe-label").title = "この端末・ブラウザはバイブレーション非対応です";
+}
+
+// セッション所有権トークン。旧セッションの後始末（abort listener・完了処理・
+// エラー処理）が新セッションの点灯を上書きしないよう、光の操作は
+// 「自分が最新のセッションであるときだけ」許す（ゲート2レビューで固定した競合防御）。
+let playSession = 0;
+
 $("play").addEventListener("click", async () => {
   const { morse } = encode(textIn.value, mode);
   if (!morse) return;
   playAbort?.abort();
   playAbort = new AbortController();
+  const session = ++playSession;
   const wpm = Number($<HTMLInputElement>("wpm").value);
   const freq = Number($<HTMLInputElement>("freq").value);
   try {
-    await playMorse(morse, { wpm, freq, signal: playAbort.signal });
+    await playMorse(morse, {
+      wpm,
+      freq,
+      signal: playAbort.signal,
+      onLight: flashOpt.checked
+        ? (on) => {
+            if (session === playSession) light.classList.toggle("lit", on);
+          }
+        : undefined,
+      vibrate: vibeOpt.checked,
+    });
   } catch (e) {
+    // 受入条件: エラーでも消灯（自分が最新セッションの場合のみ）
+    if (session === playSession) light.classList.remove("lit");
     console.error(e);
   }
 });
